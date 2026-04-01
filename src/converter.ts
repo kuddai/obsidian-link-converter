@@ -4,7 +4,7 @@ import { getFilesUnderPath } from './utils';
 
 /* -------------------- LINK DETECTOR -------------------- */
 
-type FinalFormat = 'relative-path' | 'absolute-path' | 'shortest-path';
+export type FinalFormat = 'relative-path' | 'absolute-path' | 'shortest-path';
 type LinkType = 'markdown' | 'wiki' | 'wikiTransclusion' | 'mdTransclusion';
 
 interface LinkMatch {
@@ -109,26 +109,26 @@ const getAllLinkMatchesInFile = async (mdFile: TFile, plugin: LinkConverterPlugi
 /* -------------------- CONVERTERS -------------------- */
 
 // --> Converts single file to provided final format and save back in the file
-export const convertLinksAndSaveInSingleFile = async (mdFile: TFile, plugin: LinkConverterPlugin, finalFormat: 'markdown' | 'wiki') => {
+export const convertLinksAndSaveInSingleFile = async (mdFile: TFile, plugin: LinkConverterPlugin, finalFormat: 'markdown' | 'wiki', formatOverride?: FinalFormat) => {
     let fileText = await plugin.app.vault.read(mdFile);
     let newFileText =
-        finalFormat === 'markdown' ? await convertWikiLinksToMarkdown(fileText, mdFile, plugin) : await convertMarkdownLinksToWikiLinks(fileText, mdFile, plugin);
+        finalFormat === 'markdown' ? await convertWikiLinksToMarkdown(fileText, mdFile, plugin, formatOverride) : await convertMarkdownLinksToWikiLinks(fileText, mdFile, plugin);
     let fileStat = plugin.settings.keepMtime ? await plugin.app.vault.adapter.stat(normalizePath(mdFile.path)) : {};
     await plugin.app.vault.modify(mdFile, newFileText, fileStat);
 };
 
 // --> Command Function: Converts All Links and Saves in Current Active File
-export const convertLinksInActiveFile = async (plugin: LinkConverterPlugin, finalFormat: 'markdown' | 'wiki') => {
+export const convertLinksInActiveFile = async (plugin: LinkConverterPlugin, finalFormat: 'markdown' | 'wiki', formatOverride?: FinalFormat) => {
     let mdFile: TFile = plugin.app.workspace.getActiveFile();
     if (mdFile.extension === 'md') {
-        await convertLinksAndSaveInSingleFile(mdFile, plugin, finalFormat);
+        await convertLinksAndSaveInSingleFile(mdFile, plugin, finalFormat, formatOverride);
     } else {
         new Notice('Active File is not a Markdown File');
     }
 };
 
 // --> Convert Links under Files under a Certain Folder
-export const convertLinksUnderFolder = async (folder: TFolder, plugin: LinkConverterPlugin, finalFormat: 'markdown' | 'wiki') => {
+export const convertLinksUnderFolder = async (folder: TFolder, plugin: LinkConverterPlugin, finalFormat: 'markdown' | 'wiki', formatOverride?: FinalFormat) => {
     let mdFiles: TFile[] = getFilesUnderPath(folder.path, plugin);
     let notice = new Notice('Starting link conversion', 0);
     try {
@@ -141,7 +141,7 @@ export const convertLinksUnderFolder = async (folder: TFolder, plugin: LinkConve
             if (hasFrontmatter(plugin.app, mdFile.path, 'excalidraw-plugin') || hasFrontmatter(plugin.app, mdFile.path, 'kanban-plugin')) {
                 continue;
             }
-            await convertLinksAndSaveInSingleFile(mdFile, plugin, finalFormat);
+            await convertLinksAndSaveInSingleFile(mdFile, plugin, finalFormat, formatOverride);
         }
     } catch (err) {
         console.log(err);
@@ -174,8 +174,8 @@ export const convertLinksWithinSelection = async (finalFormat: 'markdown' | 'wik
 };
 
 // --> Command Function: Converts All Links in All Files in Vault and Save in Corresponding Files
-export const convertLinksInVault = async (plugin: LinkConverterPlugin, finalFormat: 'markdown' | 'wiki') => {
-    convertLinksUnderFolder(plugin.app.vault.getRoot(), plugin, finalFormat);
+export const convertLinksInVault = async (plugin: LinkConverterPlugin, finalFormat: 'markdown' | 'wiki', formatOverride?: FinalFormat) => {
+    convertLinksUnderFolder(plugin.app.vault.getRoot(), plugin, finalFormat, formatOverride);
 };
 
 const hasFrontmatter = (app: App, filePath: string, keyToCheck: string) => {
@@ -186,19 +186,19 @@ const hasFrontmatter = (app: App, filePath: string, keyToCheck: string) => {
 /* -------------------- LINKS TO MARKDOWN CONVERTER -------------------- */
 
 // --> Converts links within given string from Wiki to MD
-export const convertWikiLinksToMarkdown = async (md: string, sourceFile: TFile, plugin: LinkConverterPlugin): Promise<string> => {
+export const convertWikiLinksToMarkdown = async (md: string, sourceFile: TFile, plugin: LinkConverterPlugin, formatOverride?: FinalFormat): Promise<string> => {
     let newMdText = md;
     let linkMatches: LinkMatch[] = await getAllLinkMatchesInFile(sourceFile, plugin);
     // --> Convert Wiki Internal Links to Markdown Link
     let wikiMatches = linkMatches.filter((match) => match.type === 'wiki');
     for (let wikiMatch of wikiMatches) {
-        let mdLink = createLink('markdown', wikiMatch.linkText, wikiMatch.altOrBlockRef, sourceFile, plugin);
+        let mdLink = createLink('markdown', wikiMatch.linkText, wikiMatch.altOrBlockRef, sourceFile, plugin, formatOverride);
         newMdText = newMdText.replace(wikiMatch.match, mdLink);
     }
     // --> Convert Wiki Transclusion Links to Markdown Transclusion
     let wikiTransclusions = linkMatches.filter((match) => match.type === 'wikiTransclusion');
     for (let wikiTransclusion of wikiTransclusions) {
-        let wikiTransclusionLink = createLink('mdTransclusion', wikiTransclusion.linkText, wikiTransclusion.altOrBlockRef, sourceFile, plugin);
+        let wikiTransclusionLink = createLink('mdTransclusion', wikiTransclusion.linkText, wikiTransclusion.altOrBlockRef, sourceFile, plugin, formatOverride);
         newMdText = newMdText.replace(wikiTransclusion.match, wikiTransclusionLink);
     }
     return newMdText;
@@ -263,13 +263,14 @@ const getFileLinkInFormat = (file: TFile, sourceFile: TFile, plugin: LinkConvert
 
 /* -------------------- HELPERS -------------------- */
 
-const createLink = (dest: LinkType, originalLink: string, altOrBlockRef: string, sourceFile: TFile, plugin: LinkConverterPlugin): string => {
+const createLink = (dest: LinkType, originalLink: string, altOrBlockRef: string, sourceFile: TFile, plugin: LinkConverterPlugin, formatOverride?: FinalFormat): string => {
     let finalLink = originalLink;
     let altText: string;
 
     let fileLink = decodeURI(finalLink);
     let file = plugin.app.metadataCache.getFirstLinkpathDest(fileLink, sourceFile.path);
-    if (file && plugin.settings.finalLinkFormat !== 'not-change') finalLink = getFileLinkInFormat(file, sourceFile, plugin, plugin.settings.finalLinkFormat);
+    let effectiveFormat = formatOverride || plugin.settings.finalLinkFormat;
+    if (file && effectiveFormat !== 'not-change') finalLink = getFileLinkInFormat(file, sourceFile, plugin, effectiveFormat);
 
     // If final link is in markdown format and the file is md, the extension should be included
     const fileExtension = file && file.extension === 'md' ? `.${file.extension}` : '';

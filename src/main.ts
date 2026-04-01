@@ -26,6 +26,14 @@ export default class LinkConverterPlugin extends Plugin {
         });
 
         this.addCommand({
+            id: 'convert-wikis-to-md-absolute-in-active-file',
+            name: 'Active File: Wiki to Markdown (Absolute Path)',
+            callback: () => {
+                Converter.convertLinksInActiveFile(this, 'markdown', 'absolute-path');
+            },
+        });
+
+        this.addCommand({
             id: 'convert-md-to-wikis-in-active-file',
             name: 'Active File: Links to Wiki',
             callback: () => {
@@ -39,6 +47,16 @@ export default class LinkConverterPlugin extends Plugin {
             callback: () => {
                 let infoText = 'Are you sure you want to convert all Wikilinks to Markdown Links?';
                 let modal = new ConfirmationModal(this.app, infoText, () => Converter.convertLinksInVault(this, 'markdown'));
+                modal.open();
+            },
+        });
+
+        this.addCommand({
+            id: 'convert-wikis-to-md-absolute-in-vault',
+            name: 'Vault: Wiki to Markdown (Absolute Path)',
+            callback: () => {
+                let infoText = 'Are you sure you want to convert all Wikilinks to Markdown Links with absolute paths?';
+                let modal = new ConfirmationModal(this.app, infoText, () => Converter.convertLinksInVault(this, 'markdown', 'absolute-path'));
                 modal.open();
             },
         });
